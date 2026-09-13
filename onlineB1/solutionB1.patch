@@ -1,0 +1,110 @@
+diff --git a/Makefile b/Makefile
+index 62fd0f8..0dd64af 100644
+--- a/Makefile
++++ b/Makefile
+@@ -139,6 +139,7 @@ UPROGS=\
+ 	$U/_grind\
+ 	$U/_wc\
+ 	$U/_zombie\
++	$U/_testloop\
+ 
+ fs.img: mkfs/mkfs README $(UPROGS)
+ 	mkfs/mkfs fs.img README $(UPROGS)
+@@ -160,7 +161,7 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
+ 	then echo "-gdb tcp::$(GDBPORT)"; \
+ 	else echo "-s -p $(GDBPORT)"; fi)
+ ifndef CPUS
+-CPUS := 3
++CPUS := 1
+ endif
+ 
+ QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nographic
+diff --git a/kernel/proc.c b/kernel/proc.c
+index 58a8a0b..c15acf8 100644
+--- a/kernel/proc.c
++++ b/kernel/proc.c
+@@ -124,6 +124,9 @@ allocproc(void)
+ found:
+   p->pid = allocpid();
+   p->state = USED;
++  acquire(&tickslock);
++  p->entry_time = ticks;
++  release(&tickslock);
+ 
+   // Allocate a trapframe page.
+   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
+@@ -453,23 +456,51 @@ scheduler(void)
+     // turned off; enable them to avoid a deadlock if all
+     // processes are waiting.
+     intr_on();
+-
+-    for(p = proc; p < &proc[NPROC]; p++) {
++    // find earliest process to run
++    struct proc *earliest = 0;
++    for(p = proc; p < &proc[NPROC]; p++){
+       acquire(&p->lock);
+-      if(p->state == RUNNABLE) {
+-        // Switch to chosen process.  It is the process's job
+-        // to release its lock and then reacquire it
+-        // before jumping back to us.
+-        p->state = RUNNING;
+-        c->proc = p;
+-        swtch(&c->context, &p->context);
+-
+-        // Process is done running for now.
+-        // It should have changed its p->state before coming back.
+-        c->proc = 0;
++      if (p->pid <= 2) { // skip init and shell
++        release(&p->lock);
++        continue;
++      }
++      if(p->state == RUNNABLE){
++        if(earliest == 0 || p->entry_time < earliest->entry_time){
++          earliest = p;
++        }
+       }
+       release(&p->lock);
+     }
++    if(earliest){
++      // printf("Kernel: Found earliest process %d at entry time %u\n", earliest->pid, earliest->entry_time);
++      acquire(&earliest->lock);
++      // run earliest till it finishes
++      while(earliest->state == RUNNABLE){
++        // printf("Kernel: Scheduling process %d\n", earliest->pid);
++        earliest->state = RUNNING;
++        c->proc = earliest;
++        swtch(&c->context, &earliest->context);
++        c->proc = 0;
++      }
++      release(&earliest->lock);
++    }else{
++      for(p = proc; p < &proc[NPROC]; p++) {
++        acquire(&p->lock);
++        if(p->pid <=2 && p->state == RUNNABLE) {
++          // Switch to chosen process.  It is the process's job
++          // to release its lock and then reacquire it
++          // before jumping back to us.
++          p->state = RUNNING;
++          c->proc = p;
++          swtch(&c->context, &p->context);
++
++          // Process is done running for now.
++          // It should have changed its p->state before coming back.
++          c->proc = 0;
++        }
++        release(&p->lock);
++      }
++    }
+   }
+ }
+ 
+diff --git a/kernel/proc.h b/kernel/proc.h
+index d021857..f38f23b 100644
+--- a/kernel/proc.h
++++ b/kernel/proc.h
+@@ -104,4 +104,5 @@ struct proc {
+   struct file *ofile[NOFILE];  // Open files
+   struct inode *cwd;           // Current directory
+   char name[16];               // Process name (debugging)
++  uint32 entry_time;           // Entry time of the process
+ };

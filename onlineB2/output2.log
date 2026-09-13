@@ -1,0 +1,18 @@
+$ testloop 200 7 &; testloop 100 5 &; testloop 50 3 &;
+PID 5: Starting 200 iterations at time 18. Initial priority: 7, current: 7
+Process 7 priority increased to 15
+Process 9 priority increased to 13
+PID 7: Starting 100 iterations at time 48. Initial priority: 5, current: 15
+Process 5 priority increased to 17
+Process 9 priority increased to 23
+PID 9: Starting 50 iterations at time 78. Initial priority: 3, current: 23
+Process 5 priority increased to 27
+Process 7 priority increased to 25
+Process 7 priority increased to 35
+Process 9 priority increased to 33
+Process 5 priority increased to 37
+Process 9 priority increased to 43
+PID 9: Finished at time 176. Initial pr: 3, current: 43
+Process 7 priority increased to 45
+PID 7: Finished at time 214. Initial pr: 5, current: 45
+PID 5: Finished at time 293. Initial pr: 7, current: 37
